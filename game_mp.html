@@ -645,6 +645,7 @@
             let placedObjectsData = [];
             let collidableMeshes = [];
             let aiObjects = [];
+            window.aiObjects = aiObjects; // exposed for cross-object AI interaction
             let aiHistory = [];     // ← NEW: stores past AI object definitions
             let pendingAIObject = null;
             let isDriving = false;
@@ -672,6 +673,12 @@
             scene.add(floor);
             window.floor = floor;
             window.collidableMeshes = collidableMeshes;
+
+            // ── UTILITY: getNearbyObjects ─────────────────────────────────────────────
+            // Returns all collidable meshes within `radius` of `pos` (THREE.Vector3)
+            window.getNearbyObjects = (pos, radius) => {
+                return collidableMeshes.filter(m => m.position.distanceTo(pos) < radius);
+            };
 
             // Grid helper
             const grid = new THREE.GridHelper(200, 200, 0x222222, 0x222222);
@@ -1185,7 +1192,10 @@
                     placedObjectsData.push(objData);
                     window.collidableMeshes = collidableMeshes;
 
-                    if (mesh.userData?.onTick || mesh.userData?.physics) aiObjects.push(mesh);
+                    if (mesh.userData?.onTick || mesh.userData?.physics) {
+                        aiObjects.push(mesh);
+                        window.aiObjects = aiObjects;
+                    }
                     updateUI();
                     // Mark as owned by this player (used by video frame relay)
                     mesh.userData._mpIsOwner = true;
@@ -1232,6 +1242,9 @@ ENGINE API & RULES:
 11. Construct URLs by splitting strings to avoid auto-formatting.
 12. LIVE CAMERA / getUserMedia: if you use the camera, you MUST set this.userData.isVideoBoard=true AND store the drawing canvas as this.userData.videoCanvas. The engine will automatically relay your video to other players at ~5fps. Other players will see a "📡 Live" placeholder until the stream arrives.
 13. OWNER-ONLY interactions: if an object should only respond to the player who placed it (e.g. your mirror, your camera, your controller), set this.userData.ownerOnly=true. The engine will block E-key interactions from other players.
+14. CROSS-OBJECT INTERACTION: window.aiObjects is an array of ALL AI-spawned meshes in the world. Use it to make objects interact with each other. Example: a black hole should forEach over window.aiObjects and pull nearby ones toward itself. Objects have .position (Vector3), .userData.velocity (Vector3), .userData.physics (bool).
+15. SPATIAL QUERY: window.getNearbyObjects(position, radius) returns all placed objects within radius. Use instead of manual distance loops.
+16. MAX SCALE: each axis of scale is capped at 20. Do not exceed this.
 
 JSON SCHEMA:
 {
@@ -1264,7 +1277,14 @@ JSON SCHEMA:
                     mat.color.set(data.color || 0xffffff);
                     const mesh = new THREE.Mesh(geo, mat);
 
-                    if (data.scale) mesh.scale.set(data.scale[0], data.scale[1], data.scale[2]);
+                    if (data.scale) {
+                        const MAX_SCALE = 20;
+                        mesh.scale.set(
+                            Math.min(MAX_SCALE, data.scale[0]),
+                            Math.min(MAX_SCALE, data.scale[1]),
+                            Math.min(MAX_SCALE, data.scale[2])
+                        );
+                    }
                     mesh.userData.physics = data.physics === true;
                     mesh.userData.velocity = new THREE.Vector3(0, 0, 0);
                     mesh.userData.onTickString = data.onTickCode || '';
@@ -1384,12 +1404,18 @@ JSON SCHEMA:
                         if (keys['KeyD']) moveVec.addScaledVector(side, -speed);
 
                         if (moveVec.lengthSq() > 0) {
-                            const ry = player.position.clone();
-                            ry.y = player.position.y - 0.8;
-                            const mr = new THREE.Raycaster(ry, moveVec.clone().normalize(), 0, 0.7);
-                            if (mr.intersectObjects(collidableMeshes.filter(m =>
+                            const moveDir = moveVec.clone().normalize();
+                            const solidMeshes = collidableMeshes.filter(m =>
                                 m.userData.type !== 'resource' && m.userData.type !== 'coin_pickup'
-                            ), true).length === 0) {
+                            );
+                            // Dual-ray: waist + head height for full body collision
+                            const waistPos = player.position.clone(); waistPos.y -= 0.8;
+                            const headPos = player.position.clone(); headPos.y -= 0.2;
+                            const waistRay = new THREE.Raycaster(waistPos, moveDir, 0, 0.7);
+                            const headRay = new THREE.Raycaster(headPos, moveDir, 0, 0.7);
+                            const waistHit = waistRay.intersectObjects(solidMeshes, true).length > 0;
+                            const headHit = headRay.intersectObjects(solidMeshes, true).length > 0;
+                            if (!waistHit && !headHit) {
                                 player.position.add(moveVec);
                             }
                         }
@@ -1424,14 +1450,31 @@ JSON SCHEMA:
                     aiObjects.forEach(obj => {
                         if (obj.userData.physics) {
                             obj.userData.velocity.y -= 0.01;
-                            obj.position.add(obj.userData.velocity);
-                            obj.userData.velocity.x *= 0.98;
-                            obj.userData.velocity.z *= 0.98;
 
                             let halfH = 0.5;
                             if (obj.geometry.type === 'SphereGeometry') halfH = obj.geometry.parameters.radius * obj.scale.y;
                             else if (obj.geometry.parameters?.height) halfH = (obj.geometry.parameters.height / 2) * obj.scale.y;
+                            const halfW = 0.5 * Math.max(obj.scale.x, obj.scale.z);
 
+                            // Lateral collision with other objects (3a + 3b)
+                            const lateralVel = new THREE.Vector3(obj.userData.velocity.x, 0, obj.userData.velocity.z);
+                            if (lateralVel.lengthSq() > 0.0001) {
+                                const lateralDir = lateralVel.clone().normalize();
+                                const lateralRay = new THREE.Raycaster(obj.position.clone(), lateralDir, 0, halfW + 0.15);
+                                const lateralHits = lateralRay.intersectObjects(
+                                    collidableMeshes.filter(m => m !== obj && m.userData.type !== 'resource' && m.userData.type !== 'coin_pickup'), true
+                                );
+                                if (lateralHits.length > 0) {
+                                    obj.userData.velocity.x *= -0.3;
+                                    obj.userData.velocity.z *= -0.3;
+                                }
+                            }
+
+                            obj.position.add(obj.userData.velocity);
+                            obj.userData.velocity.x *= 0.98;
+                            obj.userData.velocity.z *= 0.98;
+
+                            // Vertical: floor + block collision
                             if (obj.position.y <= halfH) {
                                 obj.position.y = halfH;
                                 obj.userData.velocity.y *= -0.6;
