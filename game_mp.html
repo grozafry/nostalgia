@@ -765,8 +765,20 @@
 
             // ── UTILITY: getNearbyObjects ─────────────────────────────────────────────
             // Returns all collidable meshes within `radius` of `pos` (THREE.Vector3)
+            // Includes blocks, rocks, AI objects — everything solid in the world.
             window.getNearbyObjects = (pos, radius) => {
                 return collidableMeshes.filter(m => m.position.distanceTo(pos) < radius);
+            };
+
+            // ── UTILITY: pullIntoPhysics ──────────────────────────────────────────────
+            // Wake any object (block, AI object, rock) into the physics loop so external
+            // forces (gravity wells, explosions) can move it. Safe to call every frame.
+            window.pullIntoPhysics = (obj) => {
+                if (!obj || obj.userData.type === 'ai_held' || obj.userData.mpAvatar) return;
+                if (!obj.userData.velocity) obj.userData.velocity = new THREE.Vector3(0, 0, 0);
+                obj.userData.physics = true;
+                obj.userData._settled = false;
+                if (!aiObjects.includes(obj)) { aiObjects.push(obj); window.aiObjects = aiObjects; }
             };
 
             // Grid helper
@@ -1368,6 +1380,9 @@
 
                 } else if (currentTool === 'block' && rocks >= 1) {
                     mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: blockColor }));
+                    // Pre-initialize physics fields so external forces (e.g. black hole) can pull blocks
+                    mesh.userData.velocity = new THREE.Vector3(0, 0, 0);
+                    mesh.userData._settled = true; // no physics until a force wakes it
                     objData = { type: 'block', color: blockColor };
                     rocks--;
 
@@ -1469,13 +1484,14 @@ ENGINE API & RULES:
 11. Construct URLs by splitting strings to avoid auto-formatting.
 12. LIVE CAMERA / getUserMedia: set this.userData.isVideoBoard=true AND store canvas as this.userData.videoCanvas.
 13. OWNER-ONLY: set this.userData.ownerOnly=true for items only the placer can use.
-14. CROSS-OBJECT: window.aiObjects = all AI meshes. forEach to pull/push others.
-15. SPATIAL QUERY: window.getNearbyObjects(position, radius) returns nearby objects.
+14. CROSS-OBJECT: window.aiObjects = physics-managed AI meshes. window.collidableMeshes = EVERY solid object in the world (blocks, rocks, AI objects). Use collidableMeshes to affect everything.
+15. SPATIAL QUERY: window.getNearbyObjects(position, radius) returns ALL nearby collidable objects including player-placed blocks.
 16. MAX SCALE: each axis capped at 20.
 17. FLOATING OBJECTS: set "physics":false and manually control position in onTickCode. Do NOT rely on physics:true for anything that should float or orbit — it always adds downward gravity.
-18. PULL/PUSH PLAYER VERTICALLY: use window.playerVelY (writable, live). To suck the player upward: compute direction from player to object, then window.playerVelY += force (e.g. += 0.04). The engine applies gravity (-0.018/frame) so a persistent force must exceed that per frame to actually lift the player.
-19. GRAVITY WELL / BLACK HOLE pattern — floating at world position, pulling nearby objects and player:
-    physics:false, onTickCode: var P=window.player.position;var pull=6;var rSq=pull*pull;window.aiObjects.forEach(function(o){if(o===this||o.userData.type==='ai_held')return;var d=this.position.clone().sub(o.position);var lSq=d.lengthSq();if(lSq<rSq&&lSq>0.01){var f=0.012/Math.sqrt(lSq);o.userData.velocity.addScaledVector(d.normalize(),f);}}.bind(this));var dp=this.position.clone().sub(P);var lp=dp.lengthSq();if(lp<rSq&&lp>0.01){var fp=0.025/Math.sqrt(lp);P.addScaledVector(dp.normalize(),fp);window.playerVelY+=dp.normalize().y*fp;}this.rotation.y+=0.04;
+18. PULL/PUSH PLAYER VERTICALLY: use window.playerVelY (writable, live). To suck the player upward: window.playerVelY += 0.04 each frame. Engine gravity is -0.018/frame so force must exceed that to actually lift the player.
+19. WAKE ANY OBJECT INTO PHYSICS: call window.pullIntoPhysics(obj) to make any object (block, rock, AI object) obey physics and be moveable. ALWAYS call this before modifying obj.userData.velocity on objects from getNearbyObjects.
+20. GRAVITY WELL / BLACK HOLE — full pattern (floating, pulls ALL nearby objects including blocks, pulls player):
+    "physics":false, onTickCode: var pull=7;var str=0.018;var near=window.getNearbyObjects(this.position,pull);near.forEach(function(o){if(o===this||o.userData.type==='ai_held'||o.userData.mpAvatar)return;window.pullIntoPhysics(o);var d=this.position.clone().sub(o.position);var ls=d.lengthSq();if(ls>0.01)o.userData.velocity.addScaledVector(d.normalize(),str/Math.sqrt(ls));}.bind(this));var P=window.player.position;var dp=this.position.clone().sub(P);var lp=dp.lengthSq();if(lp<pull*pull&&lp>0.01){var fp=str*1.5/Math.sqrt(lp);P.addScaledVector(dp.normalize(),fp);window.playerVelY+=dp.normalize().y*fp;}this.rotation.y+=0.04;
 
 JSON SCHEMA — WORLD OBJECT:
 {
@@ -1675,15 +1691,21 @@ JSON SCHEMA — HELD ITEM:
 
                         if (_scratchV2.lengthSq() > 0) {
                             const moveDir = _scratchV2.clone().normalize();
-                            // Dual-ray collision — reuse scratch raycasters, set near/far as properties
-                            _moveRay1.ray.origin.set(player.position.x, player.position.y - 0.8, player.position.z);
+                            // Triple-ray collision: feet(y-1.4), shin(y-0.8), chest(y-0.2)
+                            // Three rays ensure small, medium, and tall AI objects all block movement
+                            _moveRay1.ray.origin.set(player.position.x, player.position.y - 1.4, player.position.z);
                             _moveRay1.ray.direction.copy(moveDir);
-                            _moveRay1.near = 0; _moveRay1.far = 0.7;
-                            _moveRay2.ray.origin.set(player.position.x, player.position.y - 0.2, player.position.z);
+                            _moveRay1.near = 0; _moveRay1.far = 0.55;
+                            _moveRay2.ray.origin.set(player.position.x, player.position.y - 0.8, player.position.z);
                             _moveRay2.ray.direction.copy(moveDir);
-                            _moveRay2.near = 0; _moveRay2.far = 0.7;
+                            _moveRay2.near = 0; _moveRay2.far = 0.55;
+                            // reuse _ghostRay as a third scratch ray (it's reset before ghost preview anyway)
+                            _ghostRay.ray.origin.set(player.position.x, player.position.y - 0.2, player.position.z);
+                            _ghostRay.ray.direction.copy(moveDir);
+                            _ghostRay.near = 0; _ghostRay.far = 0.55;
                             if (!_moveRay1.intersectObjects(_cachedSolid, true).length &&
-                                !_moveRay2.intersectObjects(_cachedSolid, true).length) {
+                                !_moveRay2.intersectObjects(_cachedSolid, true).length &&
+                                !_ghostRay.intersectObjects(_cachedSolid, true).length) {
                                 player.position.add(_scratchV2);
                             }
                         }
@@ -1763,6 +1785,8 @@ JSON SCHEMA — HELD ITEM:
                                 }
 
                                 obj.position.add(obj.userData.velocity);
+                                // Flush matrixWorld immediately so same-frame raycasts see the new position
+                                obj.updateWorldMatrix(true, false);
                                 obj.userData.velocity.x *= 0.98;
                                 obj.userData.velocity.z *= 0.98;
 
