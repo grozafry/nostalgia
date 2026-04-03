@@ -1,0 +1,11 @@
+[
+  {
+    "name": "Sample Forge",
+    "geometry": "box",
+    "color": "0x00ffcc",
+    "scale": [1, 1, 1],
+    "physics": false,
+    "onTickCode": "this.rotation.y += 0.02;",
+    "onUseCode": "window.notify('Hello from ' + (this.userData.name || 'forge object'));"
+  }
+]

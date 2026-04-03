@@ -29,7 +29,7 @@ const httpServer = http.createServer((req, res) => {
             return;
         }
         const ext = path.extname(filePath);
-        const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[ext] || 'application/octet-stream';
+        const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' }[ext] || 'application/octet-stream';
         res.writeHead(200, { 'Content-Type': mime });
         res.end(data);
     });
@@ -45,7 +45,7 @@ httpServer.listen(PORT, () => {
 const rooms = new Map();
 
 function getRoom(code) {
-    if (!rooms.has(code)) rooms.set(code, { clients: new Map(), objects: [] });
+    if (!rooms.has(code)) rooms.set(code, { clients: new Map(), objects: [], forges: [], heldItems: new Map() });
     return rooms.get(code);
 }
 
@@ -82,12 +82,16 @@ wss.on('connection', (ws) => {
                 // Send welcome with world state and existing players
                 const existingPlayers = [];
                 room.clients.forEach((c, id) => {
-                    if (id !== playerId) existingPlayers.push({ playerId: id, name: c.name, pos: c.pos, rotY: c.rotY });
+                    if (id !== playerId) existingPlayers.push({
+                        playerId: id, name: c.name, pos: c.pos, rotY: c.rotY,
+                        heldItem: room.heldItems.get(id) || null
+                    });
                 });
                 ws.send(JSON.stringify({
                     type: 'welcome',
                     playerId,
                     worldState: room.objects,
+                    roomForges: room.forges,
                     players: existingPlayers,
                 }));
 
@@ -126,6 +130,32 @@ wss.on('connection', (ws) => {
                 break;
             }
 
+            case 'share_forge': {
+                if (!playerId || !roomCode) return;
+                const room = getRoom(roomCode);
+                if (msg.forge && !room.forges.find(f => f.name === msg.forge.name)) {
+                    room.forges.push(msg.forge);
+                }
+                broadcast(room, { type: 'forge_shared', forge: msg.forge, playerName }, playerId);
+                break;
+            }
+
+            case 'hold_item': {
+                if (!playerId || !roomCode) return;
+                const room = getRoom(roomCode);
+                room.heldItems.set(playerId, msg.forgeDef);
+                broadcast(room, { type: 'hold_item', playerId, forgeDef: msg.forgeDef }, playerId);
+                break;
+            }
+
+            case 'unhold_item': {
+                if (!playerId || !roomCode) return;
+                const room = getRoom(roomCode);
+                room.heldItems.delete(playerId);
+                broadcast(room, { type: 'unhold_item', playerId }, playerId);
+                break;
+            }
+
             case 'video_frame': {
                 // Relay a compressed video frame from a board's camera to all other players
                 // msg.boardPos: {x,y,z}  msg.frameData: base64 jpeg string
@@ -147,6 +177,7 @@ wss.on('connection', (ws) => {
         if (!playerId || !roomCode) return;
         const room = getRoom(roomCode);
         room.clients.delete(playerId);
+        room.heldItems.delete(playerId);
         broadcast(room, { type: 'player_leave', playerId, name: playerName });
         console.log(`[LEAVE] ${playerName} left room "${roomCode}"`);
         // Clean up empty rooms

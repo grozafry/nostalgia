@@ -248,23 +248,38 @@
             background: #2e7d32;
         }
 
-        /* HISTORY PANEL */
-        #history-panel {
+        /* FORGE LIBRARY PANEL */
+        #forge-library {
             position: absolute;
             bottom: 80px;
             left: 16px;
             background: rgba(12, 6, 22, 0.97);
             border: 2px solid rgba(255, 215, 0, 0.5);
-            width: 220px;
+            width: 240px;
             z-index: 150;
             color: #ffd700;
-            max-height: 360px;
+            max-height: 420px;
             overflow: hidden;
             transition: all 0.3s;
         }
 
-        #history-panel.collapsed {
+        #forge-library.collapsed {
             height: 44px;
+        }
+
+        .forge-section-label {
+            font-size: 0.7em;
+            color: #aaa;
+            padding: 4px 8px 2px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .forge-index-badge {
+            font-size: 0.7em;
+            color: #888;
+            padding: 4px 8px;
+            text-align: right;
         }
 
         .panel-title {
@@ -277,10 +292,15 @@
             border-bottom: 1px solid rgba(255, 215, 0, 0.2);
         }
 
-        #history-list {
+        #forge-library-list {
             overflow-y: auto;
-            max-height: 310px;
+            max-height: 340px;
             padding: 8px;
+        }
+
+        .forge-active {
+            background: rgba(255, 215, 0, 0.12) !important;
+            border-color: #ffd700 !important;
         }
 
         .hist-item {
@@ -483,6 +503,31 @@
             pointer-events: none;
             z-index: 10;
         }
+
+        #esc-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.75);
+            color: #ffd700;
+            text-align: center;
+            font-family: 'Courier New', monospace;
+            font-size: 0.72em;
+            padding: 5px 0;
+            letter-spacing: 1px;
+            z-index: 200;
+            pointer-events: none;
+            display: none;
+        }
+
+        #esc-banner kbd {
+            background: rgba(255,215,0,0.2);
+            border: 1px solid #ffd700;
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-family: inherit;
+        }
     </style>
 </head>
 
@@ -496,9 +541,10 @@
             <input type="text" id="mp-room" placeholder="Room Code" maxlength="20" style="width:140px" value="world1">
         </div>
         <button class="start-btn" onclick="startGame()">▶ INITIALIZE WORLD</button>
-        <p style="font-size:0.75em; color:#666; margin-top:10px;">WASD · Mouse · Space=Jump · E=Interact · F=Car ·
-            R=Delete · C=Colors</p>
+        <p style="font-size:0.75em; color:#666; margin-top:10px;">WASD · Mouse · Space=Jump · E=Interact · Tab=Cycle Forge · R=Delete · C=Colors</p>
     </div>
+
+    <div id="esc-banner">Press <kbd>Esc</kbd> to unlock cursor &amp; use menus / forge panel</div>
 
     <div id="ui">
         <div id="stats">
@@ -506,7 +552,7 @@
             <div class="stat">🪙 <span id="coinCount">100</span></div>
         </div>
         <div id="active-item">Equipped: Block</div>
-        <div id="hint">SPACE=Jump · E=Interact · F=Car · R=Delete · C=Color · M=Map</div>
+        <div id="hint">SPACE=Jump · E=Use/Fire · R=Delete · C=Color · M=Map · Tab=Forge · Q=Drop Item</div>
         <div id="compass"></div>
     </div>
 
@@ -518,14 +564,15 @@
         <button class="hud-btn" onclick="clearSave()">🗑 RESET</button>
     </div>
 
-    <!-- HISTORY PANEL -->
-    <div id="history-panel">
-        <div class="panel-title" onclick="togglePanel('history-panel')">
-            <span>📦 AI HISTORY</span><span id="hist-arrow">▼</span>
+    <!-- FORGE LIBRARY PANEL -->
+    <div id="forge-library">
+        <div class="panel-title" onclick="togglePanel('forge-library')">
+            <span>⚡ FORGE LIBRARY</span><span id="forge-lib-arrow">▼</span>
         </div>
-        <div id="history-list">
-            <div style="color:#666;font-size:0.8em;padding:8px;">No AI objects yet.</div>
+        <div id="forge-library-list">
+            <div style="color:#666;font-size:0.8em;padding:8px;">Loading forges...</div>
         </div>
+        <div class="forge-index-badge" id="forge-index-badge"></div>
     </div>
 
     <!-- AI FORGE -->
@@ -546,10 +593,6 @@
     <!-- TOOLBAR -->
     <div id="toolbar">
         <button class="tool-btn" onclick="setTool('block')">[1] Block<span class="cost">1 rock</span></button>
-        <button class="tool-btn" onclick="setTool('car')">[2] Car<span class="cost">20 coins</span></button>
-        <button class="tool-btn" onclick="setTool('board')">[3] Board<span class="cost">5 coins</span></button>
-        <button class="tool-btn" onclick="setTool('torch')">[4] Torch<span class="cost">3 rocks</span></button>
-        <button class="tool-btn" onclick="setTool('pen')">[5] Draw<span class="cost">free</span></button>
     </div>
 
     <!-- COLOR PICKER -->
@@ -590,7 +633,7 @@
         window.selectColor = () => { };
         window.copyPrompt = () => { };
         window.spawnAIObject = () => { };
-        window.reEquipHistory = () => { };
+        window.equipForge = () => { };
 
         try {
 
@@ -600,11 +643,12 @@
             scene.background = new THREE.Color(0x3a2a4d);
             scene.fog = new THREE.FogExp2(0x3a2a4d, 0.012);
 
-            const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 10000);
-            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 800);
+            const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
             renderer.setSize(innerWidth, innerHeight);
             renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.shadowMap.type = THREE.BasicShadowMap;
             document.body.appendChild(renderer.domElement);
 
             window.camera = camera;
@@ -617,13 +661,13 @@
             const sun = new THREE.DirectionalLight(0xfff5cc, 0.8);
             sun.position.set(30, 50, 20);
             sun.castShadow = true;
-            sun.shadow.mapSize.set(2048, 2048);
-            sun.shadow.camera.near = 0.1;
-            sun.shadow.camera.far = 500;
-            sun.shadow.camera.left = -100;
-            sun.shadow.camera.right = 100;
-            sun.shadow.camera.top = 100;
-            sun.shadow.camera.bottom = -100;
+            sun.shadow.mapSize.set(1024, 1024);
+            sun.shadow.camera.near = 1;
+            sun.shadow.camera.far = 120;
+            sun.shadow.camera.left = -60;
+            sun.shadow.camera.right = 60;
+            sun.shadow.camera.top = 60;
+            sun.shadow.camera.bottom = -60;
             scene.add(sun);
             window.sun = sun;
 
@@ -646,7 +690,11 @@
             let collidableMeshes = [];
             let aiObjects = [];
             window.aiObjects = aiObjects; // exposed for cross-object AI interaction
-            let aiHistory = [];     // ← NEW: stores past AI object definitions
+            let inbuiltForges = [];  // loaded from forges.json — available to all
+            let sharedForges = [];   // user-created forges shared in this session
+            let allForges = [];      // combined list (inbuilt + shared)
+            let currentForgeIndex = -1;
+            let heldItem = null;     // currently held/worn item (Type 2)
             let pendingAIObject = null;
             let isDriving = false;
             let activeCar = null;
@@ -662,6 +710,41 @@
             // Weather state
             let weatherMode = 0; // 0=clear, 1=rain, 2=night
             let rainParticles = null;
+
+            // ── PERFORMANCE: frame-level caches & scratch objects ──────────────────────
+            // Filtered mesh arrays rebuilt only when collidableMeshes length changes
+            let _cachedSolid = [];       // non-resource, non-coin, non-avatar
+            let _cachedPickups = [];     // resources + coins
+            let _cachedRayTargets = [];  // [floor, ..._cachedSolid]
+            let _cacheMeshCount = -1;
+            function _rebuildCache() {
+                _cachedSolid = collidableMeshes.filter(m =>
+                    m.userData.type !== 'resource' && m.userData.type !== 'coin_pickup' && !m.userData.mpAvatar
+                );
+                _cachedPickups = collidableMeshes.filter(m =>
+                    m.userData.type === 'resource' || m.userData.type === 'coin_pickup'
+                );
+                // floor added at index 0 — will be prepended inside animate() after floor is defined
+                _cacheNeedsFloorPrepend = true;
+                _cacheMeshCount = collidableMeshes.length;
+            }
+            let _cacheNeedsFloorPrepend = true;
+
+            // Reusable scratch objects — NEVER reassign these, only mutate
+            const _scratchV0 = new THREE.Vector3();
+            const _scratchV1 = new THREE.Vector3();
+            const _scratchV2 = new THREE.Vector3();
+            const _scratchV2d = new THREE.Vector2(0, 0);
+            const _ghostRay = new THREE.Raycaster();
+            const _moveRay1 = new THREE.Raycaster();
+            const _moveRay2 = new THREE.Raycaster();
+            const _downRay = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0), 0, 1.8);
+
+            // Frame counter for throttling
+            let _frameCount = 0;
+            // Flag: is the main animate loop running at full speed?
+            let _tabFocused = true;
+            document.addEventListener('visibilitychange', () => { _tabFocused = !document.hidden; });
 
             // ── FLOOR & GRID ────────────────────────────────────────────────────────────
             const floor = new THREE.Mesh(
@@ -693,6 +776,55 @@
             camera.position.set(0, 0, 0);
             window.player = player;
 
+            // ── HELD ITEM SYSTEM (Type 2 objects) ────────────────────────────────────
+            // Default offsets: camera = first-person (gun), player = worn (skateboard)
+            window.equipHeldItem = (mesh, attachTo, offset, rotation, forgeDef) => {
+                window.unequipHeldItem(true);
+                const parent = (attachTo === 'player') ? player : camera;
+                parent.add(mesh);
+                let off;
+                if (offset) {
+                    off = [...offset];
+                } else if (attachTo === 'player') {
+                    // Auto-position: bottom of item at ground level (y=0 in world space).
+                    // player.position.y == 1.6, so local offset y = -1.6 + halfHeight
+                    const halfH = (mesh.scale.y || 1) * 0.5;
+                    off = [0, -1.6 + halfH, 0];
+                } else {
+                    off = [0.3, -0.3, -0.8];
+                }
+                mesh.position.set(off[0], off[1], off[2]);
+                if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+                mesh.userData.type = 'ai_held';
+                mesh.userData.physics = false;
+                mesh.userData.velocity = new THREE.Vector3(0, 0, 0);
+                mesh.userData._forgeDef = forgeDef || null;
+                heldItem = mesh;
+                window.heldItem = mesh;
+                if (!aiObjects.includes(mesh)) { aiObjects.push(mesh); window.aiObjects = aiObjects; }
+                // For mounts (player-attached): elevate the player so they sit on top
+                if (attachTo === 'player') {
+                    const mountHeight = (mesh.scale.y || 1);
+                    player.position.y = 1.6 + mountHeight;
+                }
+                if (typeof mpSend === 'function') mpSend({ type: 'hold_item', forgeDef: forgeDef || null });
+            };
+
+            window.unequipHeldItem = (silent = false) => {
+                if (!heldItem) return;
+                // Restore player height if we were mounted on a player-attached item
+                if (heldItem.userData._forgeDef && heldItem.userData._forgeDef.attachTo === 'player') {
+                    player.position.y = 1.6;
+                }
+                if (typeof mpSend === 'function') mpSend({ type: 'unhold_item' });
+                heldItem.parent?.remove(heldItem);
+                aiObjects = aiObjects.filter(o => o !== heldItem);
+                window.aiObjects = aiObjects;
+                heldItem = null;
+                window.heldItem = null;
+                if (!silent) notify('Item dropped');
+            };
+
             // ── GHOST (placement preview) ────────────────────────────────────────────
             const ghost = new THREE.Mesh(
                 new THREE.BoxGeometry(1, 1, 1),
@@ -720,8 +852,9 @@
             window.togglePanel = (id) => {
                 const el = document.getElementById(id);
                 el.classList.toggle('collapsed');
-                const arrowId = id === 'ai-forge' ? 'forge-arrow' : 'hist-arrow';
-                document.getElementById(arrowId).textContent = el.classList.contains('collapsed') ? '▲' : '▼';
+                const arrowMap = { 'ai-forge': 'forge-arrow', 'forge-library': 'forge-lib-arrow' };
+                const arrowId = arrowMap[id];
+                if (arrowId) document.getElementById(arrowId).textContent = el.classList.contains('collapsed') ? '▲' : '▼';
             };
 
             window.selectColor = (el) => {
@@ -779,13 +912,13 @@
 
             // ── TOOL / COLOR ─────────────────────────────────────────────────────────
             window.setTool = (t) => {
+                // Switching tools means no longer holding a held item
+                window.unequipHeldItem(true);
                 currentTool = t;
                 window.currentTool = t;
                 document.getElementById('active-item').innerText = `Equipped: ${t.toUpperCase()}`;
                 document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-                // close color pick unless block
                 if (t !== 'block') { document.getElementById('color-pick').style.display = 'none'; isColorPickOpen = false; }
-                if (t === 'pen') ghost.visible = false;
             };
 
             // ── ROCK SPAWNING ──────────────────────────────────────────────────────────
@@ -858,67 +991,145 @@
                 return g;
             }
 
-            // ── AI HISTORY ───────────────────────────────────────────────────────────
-            function addToHistory(data, meshRef) {
-                // Avoid duplicates by name
-                if (aiHistory.find(h => h.name === data.name)) return;
-                aiHistory.push({
-                    name: data.name,
-                    geometry: data.geometry,
-                    color: data.color,
-                    scale: data.scale,
-                    physics: data.physics,
-                    onTickString: data.onTickString,
-                    onUseString: data.onUseString,
-                });
-                renderHistory();
-            }
-
-            function renderHistory() {
-                const list = document.getElementById('history-list');
-                if (aiHistory.length === 0) {
-                    list.innerHTML = '<div style="color:#666;font-size:0.8em;padding:8px;">No AI objects yet.</div>';
-                    return;
-                }
-                list.innerHTML = aiHistory.map((item, i) =>
-                    `<div class="hist-item" onclick="reEquipHistory(${i})">
-      <span>${item.name}</span>
-      <span class="re-equip">▶ equip</span>
-    </div>`
-                ).join('');
-            }
-
-            window.reEquipHistory = (i) => {
-                const data = aiHistory[i];
+            // ── BUILD GEOMETRY FROM FORGE DEFINITION ──────────────────────────────────
+            function buildGeomFromForgeDef(forgeDef) {
                 let geo;
-                if (data.geometry === 'sphere') geo = new THREE.SphereGeometry(0.5);
-                else if (data.geometry === 'cylinder') geo = new THREE.CylinderGeometry(0.5, 0.5, 1);
+                if (forgeDef.geometry === 'sphere') geo = new THREE.SphereGeometry(0.5);
+                else if (forgeDef.geometry === 'cylinder') geo = new THREE.CylinderGeometry(0.5, 0.5, 1);
                 else geo = new THREE.BoxGeometry(1, 1, 1);
 
                 const mat = new THREE.MeshStandardMaterial();
-                mat.color.set(data.color || 0xffffff);
+                mat.color.set(forgeDef.color || 0xffffff);
                 const mesh = new THREE.Mesh(geo, mat);
-                if (data.scale) mesh.scale.set(data.scale.x || data.scale[0], data.scale.y || data.scale[1], data.scale.z || data.scale[2]);
+
+                const scaleArr = Array.isArray(forgeDef.scale)
+                    ? forgeDef.scale
+                    : [forgeDef.scale?.x || 1, forgeDef.scale?.y || 1, forgeDef.scale?.z || 1];
+                const MAX_SCALE = 20;
+                mesh.scale.set(
+                    Math.min(MAX_SCALE, scaleArr[0] || 1),
+                    Math.min(MAX_SCALE, scaleArr[1] || 1),
+                    Math.min(MAX_SCALE, scaleArr[2] || 1)
+                );
+
+                // Add composite parts
+                (forgeDef.parts || []).forEach(part => {
+                    let pGeo;
+                    if (part.geometry === 'sphere') pGeo = new THREE.SphereGeometry(0.5);
+                    else if (part.geometry === 'cylinder') pGeo = new THREE.CylinderGeometry(0.5, 0.5, 1);
+                    else pGeo = new THREE.BoxGeometry(1, 1, 1);
+
+                    const pMat = new THREE.MeshStandardMaterial();
+                    pMat.color.set(part.color || 0xffffff);
+                    const pMesh = new THREE.Mesh(pGeo, pMat);
+
+                    const ps = part.scale || [1, 1, 1];
+                    pMesh.scale.set(ps[0] || 1, ps[1] || 1, ps[2] || 1);
+
+                    const po = part.offset || [0, 0, 0];
+                    pMesh.position.set(po[0] || 0, po[1] || 0, po[2] || 0);
+
+                    const pr = part.rotation || [0, 0, 0];
+                    pMesh.rotation.set(pr[0] || 0, pr[1] || 0, pr[2] || 0);
+
+                    mesh.add(pMesh);
+                });
+
+                return mesh;
+            }
+
+            // ── FORGE LIBRARY ─────────────────────────────────────────────────────────
+            function rebuildAllForges() {
+                allForges = [...inbuiltForges, ...sharedForges];
+            }
+
+            function addSharedForge(forge) {
+                if (!forge || !forge.name) return;
+                if (sharedForges.find(f => f.name === forge.name)) return;
+                sharedForges.push(forge);
+                rebuildAllForges();
+                renderForgeLibrary();
+            }
+
+            function renderForgeLibrary() {
+                rebuildAllForges();
+                const list = document.getElementById('forge-library-list');
+                if (allForges.length === 0) {
+                    list.innerHTML = '<div style="color:#666;font-size:0.8em;padding:8px;">No forges available.</div>';
+                    document.getElementById('forge-index-badge').textContent = '';
+                    return;
+                }
+
+                let html = '';
+                const forgeRow = (item, idx) => {
+                    const tag = item.itemType === 'held' ? '<span style="color:#aaffaa;font-size:0.65em;margin-right:4px">✋HELD</span>' : '<span style="color:#aaaaff;font-size:0.65em;margin-right:4px">🌐WORLD</span>';
+                    return `<div class="hist-item${currentForgeIndex === idx ? ' forge-active' : ''}" onclick="equipForge(${idx})">${tag}<span>${item.name}</span><span class="re-equip">▶</span></div>`;
+                };
+                if (inbuiltForges.length > 0) {
+                    html += '<div class="forge-section-label">Built-in</div>';
+                    html += inbuiltForges.map((item, i) => forgeRow(item, i)).join('');
+                }
+                if (sharedForges.length > 0) {
+                    html += '<div class="forge-section-label">Shared by Players</div>';
+                    html += sharedForges.map((item, i) => forgeRow(item, inbuiltForges.length + i)).join('');
+                }
+                list.innerHTML = html;
+
+                const badge = document.getElementById('forge-index-badge');
+                if (currentForgeIndex >= 0 && currentForgeIndex < allForges.length) {
+                    badge.textContent = `[${currentForgeIndex + 1}/${allForges.length}] Tab to cycle`;
+                } else {
+                    badge.textContent = allForges.length > 0 ? `Tab to cycle (${allForges.length} available)` : '';
+                }
+            }
+
+            window.equipForge = (i) => {
+                rebuildAllForges();
+                if (i < 0 || i >= allForges.length) return;
+                const data = allForges[i];
+                currentForgeIndex = i;
+
+                const mesh = buildGeomFromForgeDef(data);
+
+                const tickCode = data.onTickCode || data.onTickString || '';
+                const useCode = data.onUseCode || data.onUseString || '';
                 mesh.userData.physics = data.physics === true;
                 mesh.userData.velocity = new THREE.Vector3(0, 0, 0);
-                mesh.userData.onTickString = data.onTickString || '';
-                mesh.userData.onUseString = data.onUseString || '';
-                if (data.onTickString) mesh.userData.onTick = new Function(data.onTickString);
-                if (data.onUseString) mesh.userData.onUse = new Function(data.onUseString);
+                mesh.userData.onTickString = tickCode;
+                mesh.userData.onUseString = useCode;
+                if (tickCode) mesh.userData.onTick = new Function(tickCode);
+                if (useCode) mesh.userData.onUse = new Function(useCode);
                 mesh.userData.type = 'ai_custom';
                 mesh.userData.name = data.name;
 
-                pendingAIObject = mesh;
-                currentTool = 'ai';
-                window.currentTool = 'ai';
-                document.getElementById('active-item').innerText = `Equipped: ${data.name.toUpperCase()}`;
                 renderer.domElement.requestPointerLock();
-                notify(`Re-equipped: ${data.name}`);
+                if (data.itemType === 'held') {
+                    // equipHeldItem calls unequipHeldItem(true) internally
+                    window.equipHeldItem(mesh, data.attachTo || 'camera', data.holdOffset || null, data.holdRotation || null, data);
+                    document.getElementById('active-item').innerText = `✋ Holding: ${data.name.toUpperCase()}`;
+                    notify(`[${i + 1}/${allForges.length}] ✋ ${data.name} equipped! (Q to drop)`);
+                } else {
+                    // Switching to a world-type object — unequip any held item first
+                    window.unequipHeldItem(true);
+                    pendingAIObject = mesh;
+                    currentTool = 'ai';
+                    window.currentTool = 'ai';
+                    document.getElementById('active-item').innerText = `Equipped: ${data.name.toUpperCase()}`;
+                    notify(`[${i + 1}/${allForges.length}] ${data.name} — click to place`);
+                }
+                renderForgeLibrary();
             };
+
+            function cycleForge(direction) {
+                rebuildAllForges();
+                if (allForges.length === 0) { notify('No forges in library'); return; }
+                currentForgeIndex = (currentForgeIndex + direction + allForges.length) % allForges.length;
+                equipForge(currentForgeIndex);
+            }
 
             // ── SAVE / LOAD ───────────────────────────────────────────────────────────
             window.saveGame = () => {
-                const state = { rocks, coins, objects: placedObjectsData, aiHistory };
+                const state = { rocks, coins, objects: placedObjectsData, aiHistory: sharedForges };
                 localStorage.setItem('nostalgiaSave', JSON.stringify(state));
                 notify('💾 World Saved!');
                 renderer.domElement.requestPointerLock();
@@ -935,7 +1146,10 @@
                         const state = JSON.parse(saved);
                         rocks = state.rocks || 0;
                         coins = state.coins || 100;
-                        if (state.aiHistory) { aiHistory = state.aiHistory; renderHistory(); }
+                        // aiHistory migration: load old saved forges into sharedForges
+                        if (state.aiHistory && state.aiHistory.length > 0) {
+                            state.aiHistory.forEach(f => addSharedForge(f));
+                        }
                         (state.objects || []).forEach(obj => recreateObject(obj));
                     } catch (e) { console.warn('Save load error', e); }
                 }
@@ -955,12 +1169,7 @@
                 } else if (data.type === 'torch') {
                     mesh = createTorch();
                 } else if (data.type === 'ai_custom') {
-                    let geo;
-                    if (data.geometry === 'sphere') geo = new THREE.SphereGeometry(0.5);
-                    else if (data.geometry === 'cylinder') geo = new THREE.CylinderGeometry(0.5, 0.5, 1);
-                    else geo = new THREE.BoxGeometry(1, 1, 1);
-                    mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: data.color }));
-                    if (data.scale) mesh.scale.set(data.scale.x || 1, data.scale.y || 1, data.scale.z || 1);
+                    mesh = buildGeomFromForgeDef(data);
                     mesh.userData.physics = data.physics === true;
                     mesh.userData.velocity = new THREE.Vector3();
                     mesh.userData.name = data.name;
@@ -985,11 +1194,21 @@
                 document.getElementById('overlay').style.display = 'none';
                 loadGame();
                 renderer.domElement.requestPointerLock();
-                mpConnect(); // ← multiplayer
+                // Load inbuilt forges from config, then connect multiplayer
+                fetch('/forges.json')
+                    .then(r => r.json())
+                    .then(data => {
+                        inbuiltForges = Array.isArray(data) ? data : [];
+                        rebuildAllForges();
+                        renderForgeLibrary();
+                    })
+                    .catch(() => { inbuiltForges = []; renderForgeLibrary(); });
+                mpConnect();
             };
 
             // ── INPUT ──────────────────────────────────────────────────────────────────
             const keys = {};
+            window.keys = keys; // exposed for AI scripts (skateboard, jetpack, etc.)
             window.addEventListener('keydown', e => {
                 if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
                 keys[e.code] = true;
@@ -998,7 +1217,6 @@
                     e.preventDefault();
                     if (isOnGround) { playerVelY = JUMP_FORCE; isOnGround = false; }
                 }
-                if (e.code === 'KeyF') tryEnterCar();
                 if (e.code === 'KeyM') {
                     isMinimapOn = !isMinimapOn;
                     document.getElementById('minimap').style.display = isMinimapOn ? 'block' : 'none';
@@ -1010,10 +1228,11 @@
                 if (e.code === 'KeyR') tryDeleteLookAt();
                 if (e.code === 'KeyE') tryInteract();
                 if (e.key === '1') setTool('block');
-                if (e.key === '2') setTool('car');
-                if (e.key === '3') setTool('board');
-                if (e.key === '4') setTool('torch');
-                if (e.key === '5') setTool('pen');
+                if (e.code === 'Tab') {
+                    e.preventDefault();
+                    cycleForge(e.shiftKey ? -1 : 1);
+                }
+                if (e.code === 'KeyQ') window.unequipHeldItem();
                 // T = focus AI Idea input,  G = focus AI Response textarea
                 if (e.code === 'KeyT') {
                     document.exitPointerLock();
@@ -1033,6 +1252,12 @@
             window.addEventListener('keyup', e => keys[e.code] = false);
 
             function tryInteract() {
+                // Held items (Type 2) fire directly — they're not in the scene graph for raycasting
+                if (heldItem && heldItem.userData.onUse) {
+                    try { heldItem.userData.onUse.call(heldItem); } catch (e) { console.error(e); }
+                    return;
+                }
+                // World objects: raycast for E-interactable objects
                 const raycaster = new THREE.Raycaster();
                 raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
                 const hits = raycaster.intersectObjects(collidableMeshes, true);
@@ -1085,17 +1310,6 @@
                     const obj = hit.object;
                     const root = obj.parent?.userData?.type ? obj.parent : obj;
 
-                    if (currentTool === 'pen' && root.userData.isWritable) {
-                        const uv = hit.uv;
-                        if (uv) {
-                            root.userData.ctx.beginPath();
-                            root.userData.ctx.arc(uv.x * 512, (1 - uv.y) * 512, 8, 0, Math.PI * 2);
-                            root.userData.ctx.fillStyle = 'black';
-                            root.userData.ctx.fill();
-                            root.userData.tex.needsUpdate = true;
-                        }
-                        return;
-                    }
                     if (root.userData.type === 'resource') {
                         scene.remove(root);
                         collidableMeshes = collidableMeshes.filter(m => m !== root && m !== obj);
@@ -1119,8 +1333,8 @@
                 }
 
                 // Place
-                const placeHits = raycaster.intersectObjects([floor, ...collidableMeshes], true);
-                if (placeHits.length > 0 && currentTool !== 'pen') {
+                const placeHits = raycaster.intersectObjects(_cachedRayTargets.length ? _cachedRayTargets : [floor, ...collidableMeshes], true);
+                if (placeHits.length > 0) {
                     placeItem(placeHits[0].point, placeHits[0].face?.normal || new THREE.Vector3(0, 1, 0));
                 }
             });
@@ -1142,7 +1356,6 @@
                         onTickString: mesh.userData.onTickString,
                         onUseString: mesh.userData.onUseString,
                     };
-                    addToHistory(objData, mesh);
                     pendingAIObject = null;
                     currentTool = 'block'; window.currentTool = 'block';
                     document.getElementById('active-item').innerText = 'Equipped: BLOCK';
@@ -1152,35 +1365,15 @@
                     objData = { type: 'block', color: blockColor };
                     rocks--;
 
-                } else if (currentTool === 'car' && coins >= 20) {
-                    mesh = createCarModel();
-                    objData = { type: 'car' };
-                    coins -= 20;
-
-                } else if (currentTool === 'board' && coins >= 5) {
-                    mesh = createBoardModel();
-                    objData = { type: 'board' };
-                    coins -= 5;
-
-                } else if (currentTool === 'torch' && rocks >= 3) {
-                    mesh = createTorch();
-                    objData = { type: 'torch' };
-                    rocks -= 3;
-
                 } else {
                     if (currentTool === 'block') notify('❌ Need rocks!');
-                    if (currentTool === 'car') notify('❌ Need 20 coins!');
-                    if (currentTool === 'board') notify('❌ Need 5 coins!');
-                    if (currentTool === 'torch') notify('❌ Need 3 rocks!');
                     return;
                 }
 
                 if (mesh) {
                     const n = norm.clone().multiplyScalar(0.51);
                     let snapPos = pt.clone().add(n);
-                    let yOff = 0.5;
-                    if (mesh.userData.type === 'car') yOff = 0.35;
-                    if (mesh.userData.type === 'torch') yOff = 0.5;
+                    const yOff = 0.5;
                     snapPos.set(Math.round(snapPos.x), Math.max(yOff, snapPos.y), Math.round(snapPos.z));
 
                     mesh.position.copy(snapPos);
@@ -1228,33 +1421,79 @@
                 const prompt = `You are an expert Three.js Game Engine Scripter. The user wants: "${input}".
 Respond ONLY with a raw JSON object. NO markdown. NO explanation. Just JSON.
 
+OBJECT TYPE — choose one automatically based on the request:
+- TYPE 1 "world": an independent object placed in the world (e.g. a lamp, a black hole, a fountain). Lives at a fixed world position.
+- TYPE 2 "held": something the player carries or wears (e.g. a gun, a skateboard, a jetpack). Attaches to the player body and follows them everywhere.
+Set "itemType" to "world" or "held". If the user describes something you hold, wear, ride, or use as equipment → "held".
+
+FOR HELD ITEMS ONLY:
+- "attachTo": "camera" for hand-held first-person items (gun, flashlight, sword). "player" for worn/ridden items (skateboard, jetpack, armor).
+- "holdOffset": [x,y,z] position offset from attach point. Camera: right=[0.3,-0.3,-0.8]. Centered=[0,-0.25,-0.7]. Player-worn: below feet=[0,-1.5,0].
+- "holdRotation": [x,y,z] Euler rotation in radians.
+- Set "physics":false always for held items.
+- E KEY fires onUseCode directly on the held item — no raycast needed.
+- For a GUN onUseCode — copy exactly: var cam=window.camera;var b=new window.THREE.Mesh(new window.THREE.SphereGeometry(0.08),new window.THREE.MeshStandardMaterial({color:0xffff00,emissive:0xffff00,emissiveIntensity:1}));var d=new window.THREE.Vector3();cam.getWorldDirection(d);cam.getWorldPosition(b.position);b.position.addScaledVector(d,1.2);b.userData.velocity=d.clone().multiplyScalar(0.6);b.userData.physics=true;b.userData.type='ai_custom';window.scene.add(b);window.aiObjects.push(b);window.collidableMeshes.push(b);window.notify('💥 BANG!');
+- For a SKATEBOARD/JETPACK onTickCode — use window.keys for input: var fwd=new window.THREE.Vector3();window.camera.getWorldDirection(fwd);fwd.y=0;fwd.normalize();var side=new window.THREE.Vector3().crossVectors(new window.THREE.Vector3(0,1,0),fwd).normalize();if(window.keys['KeyW'])window.player.position.addScaledVector(fwd,0.18);if(window.keys['KeyS'])window.player.position.addScaledVector(fwd,-0.12);if(window.keys['KeyA'])window.player.position.addScaledVector(side,0.12);if(window.keys['KeyD'])window.player.position.addScaledVector(side,-0.12);
+- window.keys — live keyboard state object, e.g. window.keys['KeyW'], window.keys['Space'].
+- window.equipHeldItem(mesh, attachTo, offset, rotation) — engine API to equip programmatically.
+- window.unequipHeldItem() — drops current held item. Player presses Q to drop.
+- 'this' in onTickCode/onUseCode = the held item mesh (parented to camera or player).
+
+VISUAL QUALITY — MANDATORY:
+- Objects MUST visually resemble what was requested. A single plain box is NEVER acceptable for recognizable objects.
+- Use "parts" array to compose multiple pieces. Build guns from barrel+handle+trigger, skateboards from deck+wheels+trucks, swords from blade+hilt+guard.
+- Realistic colors: wood=0x8B4513, steel=0x888888, black rubber=0x111111, gold=0xFFD700, glass=0xaaddff, flesh=0xffcc88.
+- parts[] schema: {"geometry":"box|sphere|cylinder","color":"0xrrggbb","scale":[x,y,z],"offset":[x,y,z],"rotation":[rx,ry,rz]}
+- For a GUN: main=long thin barrel box, parts=[handle box angled down, trigger tiny box, magazine box].
+- For a SKATEBOARD: main=flat deck box, parts=[4 cylinder wheels at corners, 2 thin truck boxes].
+- For a SWORD: main=thin tall blade box, parts=[cross-guard flat box, handle cylinder, pommel sphere].
+- Keep part scales relative to the main geometry (which is 1 unit by default, then scaled by "scale").
+
 ENGINE API & RULES:
 1. 'this' = the THREE.Mesh. Use 'this.userData' for state.
-2. 'window.player': THREE.Group. 'window.camera': PerspectiveCamera.
+2. 'window.player': THREE.Group at player world position. 'window.camera': PerspectiveCamera.
 3. 'window.THREE': global Three.js. ALWAYS prefix with 'window.THREE.'. NEVER 'new THREE.'.
-4. "physics":true enables gravity, bounce, block collision natively (engine handles it).
+4. "physics":true enables gravity, bounce, block collision natively (engine handles it). NEVER true for held items.
 5. Modify 'this.userData.velocity' (Vector3) for impulse-based motion. DO NOT write custom gravity.
 6. Canvas text: if(!this.userData.ctx){this.userData.canvas=document.createElement('canvas');this.userData.ctx=this.userData.canvas.getContext('2d');this.material.map=new window.THREE.CanvasTexture(this.userData.canvas);}
 7. Image URL: new window.THREE.TextureLoader().load('URL',tex=>{this.material.map=tex;this.material.needsUpdate=true;})
-8. CORS images: use upload.wikimedia.org or similar. News: 'https://'+'ok.surf/api/v1/cors/news-feed'
+8. CORS images: use upload.wikimedia.org or similar.
 9. Guard fetches with this.userData.fetched flag. Exact: fetch(url).then(r=>r.json()).then(data=>{})
 10. ONE-LINE minified code. Use \\n for display newlines.
 11. Construct URLs by splitting strings to avoid auto-formatting.
-12. LIVE CAMERA / getUserMedia: if you use the camera, you MUST set this.userData.isVideoBoard=true AND store the drawing canvas as this.userData.videoCanvas. The engine will automatically relay your video to other players at ~5fps. Other players will see a "📡 Live" placeholder until the stream arrives.
-13. OWNER-ONLY interactions: if an object should only respond to the player who placed it (e.g. your mirror, your camera, your controller), set this.userData.ownerOnly=true. The engine will block E-key interactions from other players.
-14. CROSS-OBJECT INTERACTION: window.aiObjects is an array of ALL AI-spawned meshes in the world. Use it to make objects interact with each other. Example: a black hole should forEach over window.aiObjects and pull nearby ones toward itself. Objects have .position (Vector3), .userData.velocity (Vector3), .userData.physics (bool).
-15. SPATIAL QUERY: window.getNearbyObjects(position, radius) returns all placed objects within radius. Use instead of manual distance loops.
-16. MAX SCALE: each axis of scale is capped at 20. Do not exceed this.
+12. LIVE CAMERA / getUserMedia: set this.userData.isVideoBoard=true AND store canvas as this.userData.videoCanvas.
+13. OWNER-ONLY: set this.userData.ownerOnly=true for items only the placer can use.
+14. CROSS-OBJECT: window.aiObjects = all AI meshes. forEach to pull/push others.
+15. SPATIAL QUERY: window.getNearbyObjects(position, radius) returns nearby objects.
+16. MAX SCALE: each axis capped at 20.
 
-JSON SCHEMA:
+JSON SCHEMA — WORLD OBJECT:
 {
   "name":"Short Name",
-  "geometry":"box",
+  "itemType":"world",
+  "geometry":"box|sphere|cylinder",
   "color":"0xffffff",
   "scale":[1,1,1],
   "physics":true,
-  "onTickCode":"minified js -- 60fps",
-  "onUseCode":"minified js -- on E press"
+  "onTickCode":"minified js",
+  "onUseCode":"minified js",
+  "parts":[]
+}
+
+JSON SCHEMA — HELD ITEM:
+{
+  "name":"Short Name",
+  "itemType":"held",
+  "attachTo":"camera|player",
+  "holdOffset":[0.3,-0.3,-0.8],
+  "holdRotation":[0,0,0],
+  "geometry":"box|sphere|cylinder",
+  "color":"0xffffff",
+  "scale":[1,1,1],
+  "physics":false,
+  "onTickCode":"minified js -- runs every frame",
+  "onUseCode":"minified js -- runs on E press",
+  "parts":[]
 }`;
                 navigator.clipboard.writeText(prompt);
                 notify('📋 Prompt copied! Paste into Gemini/ChatGPT.');
@@ -1268,23 +1507,8 @@ JSON SCHEMA:
                     let data;
                     try { data = JSON.parse(clean); } catch (e) { data = new Function('return ' + clean)(); }
 
-                    let geo;
-                    if (data.geometry === 'sphere') geo = new THREE.SphereGeometry(0.5);
-                    else if (data.geometry === 'cylinder') geo = new THREE.CylinderGeometry(0.5, 0.5, 1);
-                    else geo = new THREE.BoxGeometry(1, 1, 1);
+                    const mesh = buildGeomFromForgeDef(data);
 
-                    const mat = new THREE.MeshStandardMaterial();
-                    mat.color.set(data.color || 0xffffff);
-                    const mesh = new THREE.Mesh(geo, mat);
-
-                    if (data.scale) {
-                        const MAX_SCALE = 20;
-                        mesh.scale.set(
-                            Math.min(MAX_SCALE, data.scale[0]),
-                            Math.min(MAX_SCALE, data.scale[1]),
-                            Math.min(MAX_SCALE, data.scale[2])
-                        );
-                    }
                     mesh.userData.physics = data.physics === true;
                     mesh.userData.velocity = new THREE.Vector3(0, 0, 0);
                     mesh.userData.onTickString = data.onTickCode || '';
@@ -1294,13 +1518,39 @@ JSON SCHEMA:
                     mesh.userData.type = 'ai_custom';
                     mesh.userData.name = data.name;
 
-                    pendingAIObject = mesh;
-                    currentTool = 'ai'; window.currentTool = 'ai';
-                    document.getElementById('active-item').innerText = `Equipped: ${data.name || 'AI OBJECT'}`;
+                    const forgeDef = {
+                        name: data.name || 'AI Object',
+                        itemType: data.itemType || 'world',
+                        attachTo: data.attachTo || 'camera',
+                        holdOffset: data.holdOffset || null,
+                        holdRotation: data.holdRotation || null,
+                        geometry: data.geometry || 'box',
+                        color: data.color || '0xffffff',
+                        scale: data.scale || [1, 1, 1],
+                        physics: data.physics === true,
+                        onTickCode: data.onTickCode || '',
+                        onUseCode: data.onUseCode || '',
+                        parts: data.parts || [],
+                    };
+                    addSharedForge(forgeDef);
+                    mpSend({ type: 'share_forge', forge: forgeDef });
+
                     document.getElementById('ai-response').value = '';
                     document.getElementById('ai-idea').value = '';
                     renderer.domElement.requestPointerLock();
-                    notify(`✨ ${data.name} ready to place!`);
+
+                    if (forgeDef.itemType === 'held') {
+                        window.equipHeldItem(mesh, forgeDef.attachTo, forgeDef.holdOffset, forgeDef.holdRotation, forgeDef);
+                        currentForgeIndex = allForges.length - 1;
+                        document.getElementById('active-item').innerText = `✋ Holding: ${forgeDef.name.toUpperCase()}`;
+                        notify(`✋ ${forgeDef.name} equipped! (Q to drop)`);
+                    } else {
+                        pendingAIObject = mesh;
+                        currentTool = 'ai'; window.currentTool = 'ai';
+                        currentForgeIndex = allForges.length - 1;
+                        document.getElementById('active-item').innerText = `Equipped: ${forgeDef.name.toUpperCase()}`;
+                        notify(`✨ ${forgeDef.name} ready to place!`);
+                    }
                 } catch (e) {
                     alert('Parse failed! Check console.');
                     console.error(e);
@@ -1355,9 +1605,25 @@ JSON SCHEMA:
 
             // ── MAIN LOOP ──────────────────────────────────────────────────────────────
             let clock = 0;
+            const _upVec = new THREE.Vector3(0, 1, 0);
+            const _negYVec = new THREE.Vector3(0, -1, 0);
+
             function animate() {
                 requestAnimationFrame(animate);
                 clock += 0.016;
+                _frameCount++;
+
+                // ── REBUILD MESH CACHE (only when object count changes) ───────────
+                if (collidableMeshes.length !== _cacheMeshCount) {
+                    _rebuildCache();
+                    if (floor) {
+                        _cachedRayTargets = [floor, ..._cachedSolid];
+                        _cacheNeedsFloorPrepend = false;
+                    }
+                } else if (_cacheNeedsFloorPrepend && floor) {
+                    _cachedRayTargets = [floor, ..._cachedSolid];
+                    _cacheNeedsFloorPrepend = false;
+                }
 
                 if (document.pointerLockElement === renderer.domElement) {
 
@@ -1376,63 +1642,57 @@ JSON SCHEMA:
                             isOnGround = false;
                         }
 
-                        // Block collision from above (stand on blocks)
-                        const downRay = new THREE.Raycaster(
-                            player.position.clone(),
-                            new THREE.Vector3(0, -1, 0),
-                            0, 1.8
-                        );
-                        const blockHits = downRay.intersectObjects(collidableMeshes.filter(m =>
-                            m.userData.type !== 'resource' && m.userData.type !== 'coin_pickup'
-                        ), true);
+                        // Block collision from above — reuse scratch raycaster + position
+                        _downRay.ray.origin.copy(player.position);
+                        _downRay.near = 0; _downRay.far = 1.8;
+                        const blockHits = _downRay.intersectObjects(_cachedSolid, true);
                         if (blockHits.length > 0 && playerVelY <= 0) {
                             player.position.y = blockHits[0].point.y + 1.6;
                             playerVelY = 0;
                             isOnGround = true;
                         }
 
-                        // Movement
+                        // Movement — reuse scratch vectors
                         const speed = keys['ShiftLeft'] ? 0.25 : 0.12;
-                        const fwd = new THREE.Vector3();
-                        camera.getWorldDirection(fwd);
-                        fwd.y = 0; fwd.normalize();
-                        const side = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
-                        const moveVec = new THREE.Vector3();
-                        if (keys['KeyW']) moveVec.addScaledVector(fwd, speed);
-                        if (keys['KeyS']) moveVec.addScaledVector(fwd, -speed);
-                        if (keys['KeyA']) moveVec.addScaledVector(side, speed);
-                        if (keys['KeyD']) moveVec.addScaledVector(side, -speed);
+                        camera.getWorldDirection(_scratchV0);
+                        _scratchV0.y = 0; _scratchV0.normalize();                          // fwd
+                        _scratchV1.crossVectors(_upVec, _scratchV0).normalize();            // side
+                        _scratchV2.set(0, 0, 0);                                            // moveVec
+                        if (keys['KeyW']) _scratchV2.addScaledVector(_scratchV0, speed);
+                        if (keys['KeyS']) _scratchV2.addScaledVector(_scratchV0, -speed);
+                        if (keys['KeyA']) _scratchV2.addScaledVector(_scratchV1, speed);
+                        if (keys['KeyD']) _scratchV2.addScaledVector(_scratchV1, -speed);
 
-                        if (moveVec.lengthSq() > 0) {
-                            const moveDir = moveVec.clone().normalize();
-                            const solidMeshes = collidableMeshes.filter(m =>
-                                m.userData.type !== 'resource' && m.userData.type !== 'coin_pickup'
-                            );
-                            // Dual-ray: waist + head height for full body collision
-                            const waistPos = player.position.clone(); waistPos.y -= 0.8;
-                            const headPos = player.position.clone(); headPos.y -= 0.2;
-                            const waistRay = new THREE.Raycaster(waistPos, moveDir, 0, 0.7);
-                            const headRay = new THREE.Raycaster(headPos, moveDir, 0, 0.7);
-                            const waistHit = waistRay.intersectObjects(solidMeshes, true).length > 0;
-                            const headHit = headRay.intersectObjects(solidMeshes, true).length > 0;
-                            if (!waistHit && !headHit) {
-                                player.position.add(moveVec);
+                        if (_scratchV2.lengthSq() > 0) {
+                            const moveDir = _scratchV2.clone().normalize();
+                            // Dual-ray collision — reuse scratch raycasters, set near/far as properties
+                            _moveRay1.ray.origin.set(player.position.x, player.position.y - 0.8, player.position.z);
+                            _moveRay1.ray.direction.copy(moveDir);
+                            _moveRay1.near = 0; _moveRay1.far = 0.7;
+                            _moveRay2.ray.origin.set(player.position.x, player.position.y - 0.2, player.position.z);
+                            _moveRay2.ray.direction.copy(moveDir);
+                            _moveRay2.near = 0; _moveRay2.far = 0.7;
+                            if (!_moveRay1.intersectObjects(_cachedSolid, true).length &&
+                                !_moveRay2.intersectObjects(_cachedSolid, true).length) {
+                                player.position.add(_scratchV2);
                             }
                         }
 
-                        // Auto-collect nearby coins/rocks
-                        collidableMeshes.filter(m => m.userData.type === 'resource' || m.userData.type === 'coin_pickup').forEach(m => {
-                            if (player.position.distanceTo(m.position) < 1.5) {
-                                if (m.userData.type === 'resource') { rocks++; coins += 5; notify('+1 Rock  +5 Coins'); }
-                                if (m.userData.type === 'coin_pickup') { coins += 15; notify('🪙 +15 Coins!'); }
-                                scene.remove(m);
-                                collidableMeshes = collidableMeshes.filter(x => x !== m);
-                                window.collidableMeshes = collidableMeshes;
-                                if (m.userData.type === 'resource') spawnRock();
-                                else spawnCoin();
-                                updateUI();
+                        // Auto-collect nearby coins/rocks (throttled: every 3 frames)
+                        if (_frameCount % 3 === 0) {
+                            for (let i = _cachedPickups.length - 1; i >= 0; i--) {
+                                const m = _cachedPickups[i];
+                                if (player.position.distanceToSquared(m.position) < 2.25) { // 1.5²
+                                    if (m.userData.type === 'resource') { rocks++; coins += 5; notify('+1 Rock  +5 Coins'); }
+                                    else { coins += 15; notify('🪙 +15 Coins!'); }
+                                    scene.remove(m);
+                                    collidableMeshes = collidableMeshes.filter(x => x !== m);
+                                    window.collidableMeshes = collidableMeshes;
+                                    if (m.userData.type === 'resource') spawnRock(); else spawnCoin();
+                                    updateUI();
+                                }
                             }
-                        });
+                        }
                     }
 
                     // ── DRIVING ──────────────────────────────────────────────────────
@@ -1447,88 +1707,118 @@ JSON SCHEMA:
                     }
 
                     // ── AI OBJECT PHYSICS ────────────────────────────────────────────
-                    aiObjects.forEach(obj => {
-                        if (obj.userData.physics) {
-                            obj.userData.velocity.y -= 0.01;
+                    // Distance thresholds (squared for cheap comparison)
+                    const PHYS_CULL_SQ = 80 * 80;
+                    const TICK_CULL_SQ = 60 * 60;
+                    const px = player.position.x, py = player.position.y, pz = player.position.z;
 
-                            let halfH = 0.5;
-                            if (obj.geometry.type === 'SphereGeometry') halfH = obj.geometry.parameters.radius * obj.scale.y;
-                            else if (obj.geometry.parameters?.height) halfH = (obj.geometry.parameters.height / 2) * obj.scale.y;
-                            const halfW = 0.5 * Math.max(obj.scale.x, obj.scale.z);
+                    aiObjects.forEach((obj, idx) => {
+                        // Held items: just run onTick, position managed by parent transform
+                        if (obj.userData.type === 'ai_held') {
+                            try { if (obj.userData.onTick) obj.userData.onTick.call(obj); } catch (e) { }
+                            return;
+                        }
 
-                            // Lateral collision with other objects (3a + 3b)
-                            const lateralVel = new THREE.Vector3(obj.userData.velocity.x, 0, obj.userData.velocity.z);
-                            if (lateralVel.lengthSq() > 0.0001) {
-                                const lateralDir = lateralVel.clone().normalize();
-                                const lateralRay = new THREE.Raycaster(obj.position.clone(), lateralDir, 0, halfW + 0.15);
-                                const lateralHits = lateralRay.intersectObjects(
-                                    collidableMeshes.filter(m => m !== obj && m.userData.type !== 'resource' && m.userData.type !== 'coin_pickup'), true
-                                );
-                                if (lateralHits.length > 0) {
-                                    obj.userData.velocity.x *= -0.3;
-                                    obj.userData.velocity.z *= -0.3;
+                        const dx = obj.position.x - px, dy = obj.position.y - py, dz = obj.position.z - pz;
+                        const distSq = dx * dx + dy * dy + dz * dz;
+
+                        if (obj.userData.physics && !obj.userData._settled) {
+                            // Skip physics for far objects
+                            if (distSq < PHYS_CULL_SQ) {
+                                obj.userData.velocity.y -= 0.01;
+
+                                let halfH = 0.5;
+                                if (obj.geometry.type === 'SphereGeometry') halfH = obj.geometry.parameters.radius * obj.scale.y;
+                                else if (obj.geometry.parameters?.height) halfH = (obj.geometry.parameters.height / 2) * obj.scale.y;
+                                const halfW = 0.5 * Math.max(obj.scale.x, obj.scale.z);
+
+                                // Lateral collision — reuse scratch vector, no new allocations
+                                const lvx = obj.userData.velocity.x, lvz = obj.userData.velocity.z;
+                                const lvLenSq = lvx * lvx + lvz * lvz;
+                                if (lvLenSq > 0.0001) {
+                                    const invLen = 1 / Math.sqrt(lvLenSq);
+                                    _scratchV0.set(lvx * invLen, 0, lvz * invLen);
+                                    _moveRay1.ray.origin.copy(obj.position);
+                                    _moveRay1.ray.direction.copy(_scratchV0);
+                                    _moveRay1.near = 0; _moveRay1.far = halfW + 0.15;
+                                    if (_moveRay1.intersectObjects(_cachedSolid, true).length > 0) {
+                                        obj.userData.velocity.x *= -0.3;
+                                        obj.userData.velocity.z *= -0.3;
+                                    }
                                 }
-                            }
 
-                            obj.position.add(obj.userData.velocity);
-                            obj.userData.velocity.x *= 0.98;
-                            obj.userData.velocity.z *= 0.98;
+                                obj.position.add(obj.userData.velocity);
+                                obj.userData.velocity.x *= 0.98;
+                                obj.userData.velocity.z *= 0.98;
 
-                            // Vertical: floor + block collision
-                            if (obj.position.y <= halfH) {
-                                obj.position.y = halfH;
-                                obj.userData.velocity.y *= -0.6;
-                                if (Math.abs(obj.userData.velocity.y) < 0.02) obj.userData.velocity.y = 0;
-                            } else {
-                                const dr = new THREE.Raycaster(obj.position.clone(), new THREE.Vector3(0, -1, 0), 0, halfH + 0.1);
-                                const bh = dr.intersectObjects(collidableMeshes.filter(m => m !== obj), true);
-                                if (bh.length > 0 && obj.userData.velocity.y < 0) {
-                                    obj.position.y = bh[0].point.y + halfH;
+                                // Vertical: floor + block collision
+                                if (obj.position.y <= halfH) {
+                                    obj.position.y = halfH;
                                     obj.userData.velocity.y *= -0.6;
                                     if (Math.abs(obj.userData.velocity.y) < 0.02) obj.userData.velocity.y = 0;
+                                    // Mark settled if essentially at rest
+                                    const vSq = obj.userData.velocity.x ** 2 + obj.userData.velocity.y ** 2 + obj.userData.velocity.z ** 2;
+                                    if (vSq < 0.0001 && !obj.userData.onTick) obj.userData._settled = true;
+                                } else {
+                                    _downRay.ray.origin.copy(obj.position);
+                                    _downRay.ray.direction.copy(_negYVec);
+                                    _downRay.near = 0; _downRay.far = halfH + 0.1;
+                                    const bh = _downRay.intersectObjects(_cachedSolid, true);
+                                    if (bh.length > 0 && obj.userData.velocity.y < 0) {
+                                        obj.position.y = bh[0].point.y + halfH;
+                                        obj.userData.velocity.y *= -0.6;
+                                        if (Math.abs(obj.userData.velocity.y) < 0.02) obj.userData.velocity.y = 0;
+                                    }
                                 }
                             }
                         }
-                        try { if (obj.userData.onTick) obj.userData.onTick.call(obj); } catch (e) { }
+
+                        // onTick: always for nearby, every 4 frames for distant (stagger by index)
+                        if (distSq < TICK_CULL_SQ || (_frameCount + idx) % 4 === 0) {
+                            try { if (obj.userData.onTick) obj.userData.onTick.call(obj); } catch (e) { }
+                        }
                     });
 
-                    // ── GHOST PREVIEW ────────────────────────────────────────────────
-                    const raycaster = new THREE.Raycaster();
-                    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-                    const allHits = raycaster.intersectObjects([floor, ...collidableMeshes], true);
+                    // ── GHOST PREVIEW (throttled: every 2 frames) ────────────────────
+                    if (_frameCount % 2 === 0) {
+                        _ghostRay.setFromCamera(_scratchV2d, camera);
+                        const allHits = _ghostRay.intersectObjects(_cachedRayTargets, true);
 
-                    let isInteractive = false;
+                        let isInteractive = false;
+                        if (allHits.length > 0) {
+                            const hit = allHits[0];
+                            const root = hit.object.parent?.userData?.type ? hit.object.parent : hit.object;
+                            if (root.userData.onUse && hit.distance < 5) isInteractive = true;
+                            ghost.visible = true;
+                            const fn = hit.face?.normal || _upVec;
+                            ghost.position.set(
+                                Math.round(hit.point.x + fn.x * 0.51),
+                                Math.max(0.5, hit.point.y + fn.y * 0.51),
+                                Math.round(hit.point.z + fn.z * 0.51)
+                            );
+                        } else {
+                            ghost.visible = false;
+                        }
 
-                    if (allHits.length > 0 && currentTool !== 'pen') {
-                        const hit = allHits[0];
-                        const root = hit.object.parent?.userData?.type ? hit.object.parent : hit.object;
-
-                        if (root.userData.onUse && hit.distance < 5) isInteractive = true;
-
-                        ghost.visible = true;
-                        const n = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().multiplyScalar(0.51);
-                        ghost.position.copy(hit.point).add(n);
-                        ghost.position.set(Math.round(ghost.position.x), Math.max(0.5, ghost.position.y), Math.round(ghost.position.z));
-                    } else {
-                        ghost.visible = false;
+                        const ch = document.getElementById('crosshair');
+                        const hint = document.getElementById('interact-hint');
+                        if (isInteractive) { ch.classList.add('ch-active'); hint.style.display = 'block'; }
+                        else { ch.classList.remove('ch-active'); hint.style.display = 'none'; }
                     }
-
-                    // update crosshair
-                    const ch = document.getElementById('crosshair');
-                    const hint = document.getElementById('interact-hint');
-                    if (isInteractive) { ch.classList.add('ch-active'); hint.style.display = 'block'; }
-                    else { ch.classList.remove('ch-active'); hint.style.display = 'none'; }
 
                     updateCompass();
                     updateMinimap();
                 }
 
                 // ── ALWAYS RUNS (even when tab is not focused / pointer unlocked) ──
-                // Coin / torch bob animation
-                collidableMeshes.filter(m => m.userData.type === 'coin_pickup').forEach(m => {
-                    m.rotation.y += 0.05;
-                    m.position.y = 0.6 + Math.sin(clock * 3 + m.position.x) * 0.1;
-                });
+                // Coin bob animation — throttled: every 3 frames
+                if (_frameCount % 3 === 0) {
+                    _cachedPickups.forEach(m => {
+                        if (m.userData.type !== 'coin_pickup') return;
+                        m.rotation.y += 0.15;
+                        m.position.y = 0.6 + Math.sin(clock * 3 + m.position.x) * 0.1;
+                    });
+                }
 
                 // Rain particles follow player
                 if (rainParticles) {
@@ -1564,7 +1854,7 @@ JSON SCHEMA:
                 'border:1px solid rgba(255,215,0,0.3);border-radius:2px;',
                 'pointer-events:none;z-index:190;display:none;letter-spacing:1px;'
             ].join('');
-            resumeToast.textContent = 'Click game to resume  |  T=Forge Idea  G=Forge Response';
+            resumeToast.textContent = 'Click game to resume  |  Esc = unlock cursor to use menus  |  T=Forge Idea  G=Forge Response';
             document.body.appendChild(resumeToast);
 
             // Patch startGame to set flag
@@ -1575,6 +1865,7 @@ JSON SCHEMA:
                 if (!gameStarted) return;
                 const locked = document.pointerLockElement === renderer.domElement;
                 resumeToast.style.display = locked ? 'none' : 'block';
+                document.getElementById('esc-banner').style.display = locked ? 'block' : 'none';
             });
 
             // Canvas click: re-acquire pointer lock
@@ -1585,21 +1876,27 @@ JSON SCHEMA:
             });
 
             // ── BACKGROUND TICK ───────────────────────────────────────────────────
-            // Keeps AI objects + coin animations alive when browser throttles rAF
-            // (happens when you switch to another app / window)
+            // Only runs when tab is hidden (rAF is throttled by browser).
+            // When tab is focused the main animate() loop handles everything.
             setInterval(() => {
-                const dt = 0.05; // ~20fps equivalent step
+                if (_tabFocused) return; // main loop is running — nothing to do here
+                const dt = 0.05;
+                const t = performance.now() / 1000;
+                const _tmpV = new THREE.Vector3();
 
-                // AI object physics + onTick
                 aiObjects.forEach(obj => {
-                    if (obj.userData.physics) {
+                    if (obj.userData.type === 'ai_held') {
+                        try { if (obj.userData.onTick) obj.userData.onTick.call(obj); } catch (e) { }
+                        return;
+                    }
+                    if (obj.userData.physics && !obj.userData._settled) {
                         obj.userData.velocity.y -= 0.01 * dt * 30;
-                        obj.position.add(obj.userData.velocity.clone().multiplyScalar(dt * 30));
+                        _tmpV.copy(obj.userData.velocity).multiplyScalar(dt * 30);
+                        obj.position.add(_tmpV);
                         obj.userData.velocity.x *= 0.98;
                         obj.userData.velocity.z *= 0.98;
-                        const halfH = 0.5;
-                        if (obj.position.y <= halfH) {
-                            obj.position.y = halfH;
+                        if (obj.position.y <= 0.5) {
+                            obj.position.y = 0.5;
                             obj.userData.velocity.y *= -0.6;
                             if (Math.abs(obj.userData.velocity.y) < 0.02) obj.userData.velocity.y = 0;
                         }
@@ -1607,9 +1904,9 @@ JSON SCHEMA:
                     try { if (obj.userData.onTick) obj.userData.onTick.call(obj); } catch (e) { }
                 });
 
-                // Coin spin
-                const t = performance.now() / 1000;
-                collidableMeshes.filter(m => m.userData.type === 'coin_pickup').forEach(m => {
+                // Coin spin (use cached pickups)
+                _cachedPickups.forEach(m => {
+                    if (m.userData.type !== 'coin_pickup') return;
                     m.rotation.y += 0.05 * dt * 30;
                     m.position.y = 0.6 + Math.sin(t * 3 + m.position.x) * 0.1;
                 });
@@ -1666,6 +1963,12 @@ JSON SCHEMA:
                 head.position.y = 1.45;
                 g.add(body);
                 g.add(head);
+
+                // Hand slot for held item visual
+                const handSlot = new THREE.Group();
+                handSlot.position.set(0.45, 1.0, -0.2);
+                g.add(handSlot);
+
                 g.userData.mpAvatar = true;
 
                 // Floating name label via HTML overlay
@@ -1674,7 +1977,7 @@ JSON SCHEMA:
                 label.textContent = name;
                 document.body.appendChild(label);
 
-                return { group: g, label };
+                return { group: g, label, handSlot };
             }
 
             // Project a world position to screen position for name labels
@@ -1696,6 +1999,25 @@ JSON SCHEMA:
                 peer.label.remove();
                 mpPeers.delete(id);
                 mpUpdatePlayerList();
+            }
+
+            function mpSetPeerHeldItem(peerId, forgeDef) {
+                const peer = mpPeers.get(peerId);
+                if (!peer) return;
+                // Remove existing held item visual
+                while (peer.handSlot.children.length > 0) peer.handSlot.remove(peer.handSlot.children[0]);
+                if (!forgeDef) return;
+                const vis = buildGeomFromForgeDef(forgeDef);
+                // Scale down if too large for hand view
+                const maxDim = Math.max(vis.scale.x, vis.scale.y, vis.scale.z);
+                if (maxDim > 2) vis.scale.multiplyScalar(2 / maxDim);
+                // For worn items (skateboard), show at feet instead
+                if (forgeDef.attachTo === 'player') {
+                    peer.handSlot.position.set(0, 0, 0);
+                } else {
+                    peer.handSlot.position.set(0.45, 1.0, -0.2);
+                }
+                peer.handSlot.add(vis);
             }
 
             function mpUpdatePlayerList() {
@@ -1745,6 +2067,8 @@ JSON SCHEMA:
                             mpMyId = msg.playerId;
                             // Load world objects placed by others before we joined
                             (msg.worldState || []).forEach(objData => recreateObject(objData));
+                            // Load forges shared by players already in the room
+                            (msg.roomForges || []).forEach(f => addSharedForge(f));
                             // Add avatars of players already in the room
                             (msg.players || []).forEach(p => {
                                 if (!mpPeers.has(p.playerId)) {
@@ -1754,6 +2078,7 @@ JSON SCHEMA:
                                     avatar.group.rotation.y = p.rotY || 0;
                                     scene.add(avatar.group);
                                     mpPeers.set(p.playerId, avatar);
+                                    if (p.heldItem) mpSetPeerHeldItem(p.playerId, p.heldItem);
                                 }
                             });
                             mpUpdatePlayerList();
@@ -1792,6 +2117,24 @@ JSON SCHEMA:
                         case 'place_object': {
                             if (msg.playerId === mpMyId) break;
                             recreateObject(msg.objData);
+                            break;
+                        }
+
+                        case 'forge_shared': {
+                            addSharedForge(msg.forge);
+                            notify(`🔧 ${msg.forge?.name || 'Forge'} shared by ${msg.playerName || 'a player'}`);
+                            break;
+                        }
+
+                        case 'hold_item': {
+                            if (msg.playerId === mpMyId) break;
+                            mpSetPeerHeldItem(msg.playerId, msg.forgeDef);
+                            break;
+                        }
+
+                        case 'unhold_item': {
+                            if (msg.playerId === mpMyId) break;
+                            mpSetPeerHeldItem(msg.playerId, null);
                             break;
                         }
 
